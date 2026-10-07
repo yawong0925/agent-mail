@@ -30,6 +30,7 @@ type Supervisor struct {
 	modules map[string]Module
 	cancels map[string]context.CancelFunc
 	mu      sync.RWMutex
+	once    sync.Once
 }
 
 func New() *Supervisor {
@@ -51,10 +52,14 @@ func (s *Supervisor) Run(ctx context.Context) {
 
 	// Start all registered modules
 	s.mu.RLock()
+	names := make([]string, 0, len(s.modules))
 	for name := range s.modules {
-		s.startModule(ctx, name, errChan)
+		names = append(names, name)
 	}
 	s.mu.RUnlock()
+	for _, name := range names {
+		s.startModule(ctx, name, errChan)
+	}
 
 	// Watcher loop
 	for {
@@ -66,12 +71,13 @@ func (s *Supervisor) Run(ctx context.Context) {
 		case fail := <-errChan:
 			log.Printf("[SUPERVISOR] Module '%s' crashed: %v\n", fail.Name, fail.Err)
 			log.Printf("[SUPERVISOR] Restarting '%s' in 5 seconds...\n", fail.Name)
-			time.Sleep(5 * time.Second)
-			
-			// Only restart if context isn't cancelled during the sleep
-			if ctx.Err() == nil {
-				s.startModule(ctx, fail.Name, errChan)
+			select {
+			case <-ctx.Done():
+				s.Shutdown()
+				return
+			case <-time.After(5 * time.Second):
 			}
+			s.startModule(ctx, fail.Name, errChan)
 		}
 	}
 }
@@ -87,9 +93,9 @@ func (s *Supervisor) startModule(parentCtx context.Context, name string, errChan
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				errChan <- ModuleError{
-					Name: name,
-					Err:  fmt.Errorf("panic: %v\n%s", r, debug.Stack()),
+				select {
+				case errChan <- ModuleError{Name: name, Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())}:
+				case <-parentCtx.Done():
 				}
 			}
 		}()
@@ -102,6 +108,10 @@ func (s *Supervisor) startModule(parentCtx context.Context, name string, errChan
 // supervisor/supervisor.go (replace the Shutdown function)
 
 func (s *Supervisor) Shutdown() {
+	s.once.Do(s.shutdown)
+}
+
+func (s *Supervisor) shutdown() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	

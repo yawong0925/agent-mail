@@ -50,7 +50,6 @@ func (s *Server) Start(ctx context.Context, errChan chan<- supervisor.ModuleErro
 	
 	// --- AUTH ROUTES ---
 	mux.HandleFunc("POST /api/auth/login", s.handleAdminLogin) 
-	mux.HandleFunc("POST /api/auth/verify", s.handleVerifyAdmin2FA)
 
 	// --- PROTECTED ADMIN ROUTES ---
 	mux.HandleFunc("GET /api/system/telemetry", s.RequireAuth(s.handleDashboardStats))

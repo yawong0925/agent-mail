@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"agent-mail/config"
 	"agent-mail/database"
@@ -18,45 +19,60 @@ import (
 )
 
 func main() {
-	log.Println("Starting Agent Mail System...")
+	log.Println("[MAIN] Starting Agent Mail System...")
 
-	// 1. Load Configuration
-	cfg := config.LoadConfig()
-	log.Printf("Web Portal: %s | Agent API: %s | SysMgr: %s", cfg.PortWebPortal, cfg.PortAgentAPI, cfg.PortSysMgr)
-
-	// 2. Setup Context for Graceful Shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+	// 1. SETUP SIGNAL-AWARE ROOT CONTEXT
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// 3. Initialize Database Manager
+	// 2. LOAD CONFIGURATION
+	cfg := config.LoadConfig()
+
+	// 3. INITIALIZE DATABASES
 	dbManager, err := database.NewManager(cfg)
 	if err != nil {
-		log.Fatalf("Fatal error initializing databases: %v", err)
+		log.Fatalf("[MAIN] Critical error initializing databases: %v\n", err)
 	}
 	defer dbManager.Close()
+	log.Println("[DATABASE] SQLite databases initialized successfully.")
 
-	// 4. Initialize Supervisor
+	// 4. INITIALIZE CENTRAL SUPERVISOR
 	sup := supervisor.New()
 
-	// 5. Register Modules
-	sup.Register(wapi.New(cfg, dbManager))
-	sup.Register(portal.New(cfg, dbManager))
-	sup.Register(fetcher.NewIMAP(cfg, dbManager))
-	sup.Register(sysmgr.New(cfg, dbManager))
+	// 5. REGISTER MODULES (Using correct package constructors: .New())
+	webPortal := portal.New(cfg, dbManager)
+	sup.Register(webPortal)
 
-	// 6. Listen for OS signals
+	agentAPI := wapi.New(cfg, dbManager)
+	sup.Register(agentAPI)
+
+	sysMgr := sysmgr.New(cfg, dbManager)
+	sup.Register(sysMgr)
+
+	imapFetcher := fetcher.NewIMAP(cfg, dbManager)
+	sup.Register(imapFetcher)
+
+	log.Printf("[MAIN] Web Portal: %s | Agent API: %s | SysMgr: %s\n", cfg.PortWebPortal, cfg.PortAgentAPI, cfg.PortSysMgr)
+
+	// 6. RUN THE SUPERVISOR
+	runDone := make(chan struct{})
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
-		log.Println("\n[MAIN] Shutdown signal received. Initiating graceful shutdown...")
-		cancel()
+		defer close(runDone)
+		sup.Run(ctx)
 	}()
 
-	// 7. Start Supervisor Watcher Loop (blocking call)
-	sup.Run(ctx)
-	
-	// This will only print once the supervisor's Run() function unblocks
+	// Wait here until the root context is cancelled by Ctrl+C
+	<-ctx.Done()
+
+	cancel() // restore default signal handling so a second Ctrl+C force-quits
+	log.Println("[MAIN] Shutdown signal received. Initiating graceful shutdown...")
+
+	// 7. EXPLICIT SHUTDOWN CASCADE
+	select {
+	case <-runDone:
+	case <-time.After(10 * time.Second):
+		log.Println("[MAIN] Timed out waiting for supervisor; forcing exit.")
+	}
+
 	log.Println("[MAIN] Reached complete shutdown. System exiting.")
-	log.Println("Agent Mail System stopped cleanly.")
 }

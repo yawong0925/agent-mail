@@ -14,7 +14,7 @@ type AppConfig struct {
 	DBPathMgmt       string
 	EmlStorageDir    string
 	AttachStorageDir string
-	LogStorageDir    string // New field
+	LogStorageDir    string
 	PortWebPortal    string
 	PortAgentAPI     string
 	PortSysMgr       string
@@ -31,7 +31,7 @@ func LoadConfig() *AppConfig {
 		DBPathMgmt:       getEnv("DB_MGMT", "data/mgmt.sqlite"),
 		EmlStorageDir:    getEnv("DIR_EMLS", "data/storage/emls"),
 		AttachStorageDir: getEnv("DIR_ATTACH", "data/storage/attachments"),
-		LogStorageDir:    getEnv("DIR_LOGS", "data/storage/logs"), // Mapped
+		LogStorageDir:    getEnv("DIR_LOGS", "data/storage/logs"),
 		PortWebPortal:    getEnv("PORT_WEB", ":8080"),
 		PortAgentAPI:     getEnv("PORT_API", ":8081"),
 		PortSysMgr:       getEnv("PORT_SYSMGR", ":8088"),
