@@ -1,5 +1,8 @@
 ## This is an e-Mail fetch & store bot/tool written in GoLang for AI Agents to connect
 
+# WARNING: ** Work-in-Progress. DO NOT CLONE OR FORK YET!!! **
+
+
 # What does it do?
 1. It take user credentials from web portal, stores them in a sqlite database for connections.
 2. It supports IMAP(SSL/TLS Supported), OAuth2 (GMail, Yahoo Mail, MS Outlook Mail and etc.)
